@@ -1,0 +1,816 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stick Combo Trainer</title>
+  <style>
+    /* ===== LAYOUT ===== */
+    body {
+      margin: 0;
+      background: #0b0b0f;
+      color: #eee;
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #gameContainer {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      gap: 8px;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    canvas {
+      background: #15151b;
+      border: 2px solid #333;
+    }
+    #rightPanel {
+      width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #uiBottom {
+      width: 100%;
+      padding: 8px;
+      box-sizing: border-box;
+      background: #050509;
+      border-top: 2px solid #222;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* ===== UI ELEMENTS ===== */
+    #keystrokeBar {
+      min-height: 24px;
+      padding: 6px 10px;
+      background: #181820;
+      border: 1px solid #444;
+      font-size: 14px;
+      letter-spacing: 2px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    #statusRow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .statusBox {
+      padding: 4px 8px;
+      border-radius: 4px;
+      background: #14141c;
+      border: 1px solid #333;
+    }
+    #runeDisplay.attack { color: #ff6666; }
+    #runeDisplay.defense { color: #66aaff; }
+    #runeDisplay.speed { color: #66ff99; }
+    #runeDisplay.none { color: #cccccc; }
+
+    #interruptDisplay.active {
+      color: #ffcc66;
+    }
+
+    /* ===== MOVELIST WINDOW ===== */
+    #movelist {
+      flex: 1;
+      background: #101018;
+      border: 1px solid #333;
+      padding: 6px;
+      box-sizing: border-box;
+      font-size: 12px;
+      overflow-y: auto;
+    }
+    #movelist h3 {
+      margin: 4px 0 6px;
+      font-size: 13px;
+      text-align: center;
+    }
+    .moveRow {
+      margin-bottom: 4px;
+    }
+    .moveName {
+      color: #8fd;
+      font-weight: bold;
+    }
+    .moveCombo {
+      color: #ccc;
+    }
+    .moveCd {
+      color: #999;
+    }
+
+    /* ===== COMBO METER ===== */
+    #comboMeter {
+      padding: 6px 8px;
+      background: #14141c;
+      border: 1px solid #333;
+      font-size: 13px;
+      display: none;
+    }
+    #comboRank {
+      font-weight: bold;
+    }
+    .rankF { color: #888; }
+    .rankE { color: #aaaaaa; }
+    .rankD { color: #bbbbbb; }
+    .rankC { color: #66ccff; }
+    .rankB { color: #33ffcc; }
+    .rankA { color: #ffff66; }
+    .rankS { color: #ff9966; }
+    .rankSS { color: #ff6666; }
+    .rankSSS { color: #ff33aa; }
+    .rankSSSP { color: #ff00ff; }
+    .rankTooMuch { color: #ffffff; }
+
+    /* ===== SMALL LABELS ===== */
+    #infoText {
+      font-size: 11px;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="game" width="800" height="400"></canvas>
+
+    <div id="rightPanel">
+      <div id="movelist">
+        <h3>Movelist</h3>
+        <div id="movelistContent"></div>
+      </div>
+      <div id="comboMeter">
+        <div>Hits: <span id="comboHits">0</span></div>
+        <div>Total Damage: <span id="comboDamage">0</span></div>
+        <div>Rank: <span id="comboRank" class="rankF">F</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="uiBottom">
+    <div id="keystrokeBar"></div>
+    <div id="statusRow">
+      <div class="statusBox">
+        Facing: <span id="facingText">RIGHT ➜</span>
+      </div>
+      <div class="statusBox">
+        Rune: <span id="runeDisplay" class="none">None</span>
+      </div>
+      <div class="statusBox">
+        Interruptible: <span id="interruptDisplay">No</span>
+      </div>
+      <div class="statusBox">
+        Attack Store: <span id="attackStoreDisplay">Inactive</span>
+      </div>
+      <div class="statusBox">
+        Reset: <b>M</b> | Taunt / Cancel: <b>T</b> | Rune: <b>F / G</b> | Move: combos
+      </div>
+    </div>
+    <div id="infoText">
+      Movement: I (up), K (down), J (left), L (right).<br>
+      Type combos (Z, X, C, F, G, SS, WW, SC, SDQ, SAX, SAQ, ADQ, ASQ, ASDQ, DASE, WADQ, SWQ, SWSQ, ASDE, ADWQ, SDSAE, ASDSDQ, ASDASE, ASDASDW, ADADADQ, ASDDSAE).<br>
+      Combo meter hides after 2.8s of no damage or on reset (M).
+    </div>
+  </div>
+
+  <script>
+    /* ===== CORE SETUP ===== */
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const keystrokeBar = document.getElementById('keystrokeBar');
+    const facingText = document.getElementById('facingText');
+    const runeDisplay = document.getElementById('runeDisplay');
+    const interruptDisplay = document.getElementById('interruptDisplay');
+    const attackStoreDisplay = document.getElementById('attackStoreDisplay');
+    const movelistContent = document.getElementById('movelistContent');
+
+    const comboMeterEl = document.getElementById('comboMeter');
+    const comboHitsEl = document.getElementById('comboHits');
+    const comboDamageEl = document.getElementById('comboDamage');
+    const comboRankEl = document.getElementById('comboRank');
+
+    const FPS = 60;
+    const FRAME_TIME = 1000 / FPS;
+
+    /* ===== GAME STATE ===== */
+    const player = {
+      x: 250,
+      y: 280,
+      facing: 1, // 1 right, -1 left
+      rune: 'none', // none, attack, defense, speed
+      state: 'idle',
+      animTime: 0,
+      interruptible: false,
+      attackStoreMode: false,
+      attackStoreMoves: [],
+    };
+
+    const dummy = {
+      x: 550,
+      y: 280,
+      hitTimer: 0,
+    };
+
+    let keysTyped = '';
+    const maxKeysShown = 30;
+
+    const projectiles = [];
+    const effects = [];
+
+    /* ===== COMBO METER ===== */
+    const combo = {
+      hits: 0,
+      damage: 0,
+      lastDamageTime: 0,
+    };
+
+    function addDamage(amount) {
+      combo.hits += 1;
+      combo.damage += amount;
+      combo.lastDamageTime = performance.now();
+      updateComboUI();
+    }
+
+    function resetCombo() {
+      combo.hits = 0;
+      combo.damage = 0;
+      combo.lastDamageTime = 0;
+      comboMeterEl.style.display = 'none';
+    }
+
+    function updateComboUI() {
+      comboMeterEl.style.display = 'block';
+      comboHitsEl.textContent = combo.hits;
+      comboDamageEl.textContent = combo.damage;
+      const dmg = combo.damage;
+      let rank = 'F';
+      let cls = 'rankF';
+      if (dmg >= 999) { rank = 'Too much'; cls = 'rankTooMuch'; }
+      else if (dmg >= 500) { rank = 'SSS+'; cls = 'rankSSSP'; }
+      else if (dmg >= 400) { rank = 'SSS'; cls = 'rankSSS'; }
+      else if (dmg >= 300) { rank = 'SS'; cls = 'rankSS'; }
+      else if (dmg >= 250) { rank = 'S'; cls = 'rankS'; }
+      else if (dmg >= 200) { rank = 'A'; cls = 'rankA'; }
+      else if (dmg >= 150) { rank = 'B'; cls = 'rankB'; }
+      else if (dmg >= 100) { rank = 'C'; cls = 'rankC'; }
+      else if (dmg >= 60) { rank = 'D'; cls = 'rankD'; }
+      else if (dmg >= 30) { rank = 'E'; cls = 'rankE'; }
+      comboRankEl.textContent = rank;
+      comboRankEl.className = cls;
+    }
+
+    /* ===== COOLDOWNS ===== */
+    const cooldowns = {};
+
+    function setCooldown(key, seconds) {
+      cooldowns[key] = performance.now() + seconds * 1000;
+    }
+
+    function isOnCooldown(key) {
+      const now = performance.now();
+      return cooldowns[key] && cooldowns[key] > now;
+    }
+
+    /* ===== MOVES DEFINITIONS ===== */
+    const moves = [
+      { combo: 'z', name: 'Two Kicks', speed: 'very fast', cdKey: 'ZXC', cd: 1.5, dmg: 6, interruptible: false },
+      { combo: 'x', name: 'Sweep Kick (keep in place)', speed: 'very fast', cdKey: 'ZXC', cd: 1.5, dmg: 5, interruptible: false },
+      { combo: 'c', name: 'Charge Kick', speed: 'average', cdKey: 'ZXC', cd: 1.5, dmg: 10, interruptible: false },
+      { combo: 'f', name: 'Rune Change (Attack/Speed/Defense cycle)', speed: 'very fast', cdKey: 'F', cd: 0.01, dmg: 0, interruptible: false },
+      { combo: 'g', name: 'Rune Change (inverse)', speed: 'very fast', cdKey: 'G', cd: 0.01, dmg: 0, interruptible: false },
+      { combo: 't', name: 'Taunt (Cancel window)', speed: 'very fast', cdKey: 'T', cd: 0.2, dmg: 0, interruptible: false },
+      { combo: 'ww', name: 'Dash Forward', speed: 'fast', cdKey: 'SSWW', cd: 2.5, dmg: 0, interruptible: true },
+      { combo: 'ss', name: 'Dash Backward', speed: 'fast', cdKey: 'SSWW', cd: 2.5, dmg: 0, interruptible: true },
+      { combo: 'sc', name: 'Downward Projectile + Small Boost', speed: 'fast', cdKey: 'SC', cd: 3, dmg: 8, interruptible: false },
+      { combo: 'sdq', name: 'Dash + Uppercut (launch)', speed: 'fast', cdKey: 'SDQ', cd: 5, dmg: 12, interruptible: true },
+      { combo: 'sax', name: 'Spinning Kick (knockback)', speed: 'very fast', cdKey: 'SAX', cd: 2.5, dmg: 9, interruptible: false },
+      { combo: 'saq', name: 'Overhead Kick (downwards knockback)', speed: 'fast', cdKey: 'SAQ', cd: 2.5, dmg: 10, interruptible: false },
+      { combo: 'adq', name: 'Uppercut (up knockback)', speed: 'fast', cdKey: 'ADQ', cd: 1.5, dmg: 9, interruptible: false },
+      { combo: 'asq', name: 'Charge Stomp (up knockback)', speed: 'slow', cdKey: 'ASQ', cd: 6, dmg: 14, interruptible: false },
+      { combo: 'asdq', name: 'Jaw Attack (mid-range)', speed: 'fast', cdKey: 'ASDQ', cd: 13.5, dmg: 20, interruptible: false },
+      { combo: 'dase', name: 'Forward Magnet Projectile', speed: 'very fast', cdKey: 'DASE', cd: 5, dmg: 7, interruptible: false },
+      { combo: 'wadq', name: 'Lunge + Impale (Attack rune)', speed: 'fast', cdKey: 'WADQ', cd: 10, dmg: 18, interruptible: false },
+      { combo: 'swq', name: 'Blackhole (short radius)', speed: 'very fast', cdKey: 'SWQ', cd: 4, dmg: 5, interruptible: false },
+      { combo: 'swsq', name: 'Attack Mode Greatsword Lunge', speed: 'slow', cdKey: 'SWSQ', cd: 4, dmg: 22, interruptible: false },
+      { combo: 'asde', name: 'Speed Mode Teleport Forward', speed: 'fast', cdKey: 'ASDE', cd: 5.5, dmg: 0, interruptible: false },
+      { combo: 'adwq', name: 'Defense Mode Kick + Grab', speed: 'fast', cdKey: 'ADWQ', cd: 5, dmg: 16, interruptible: true },
+      { combo: 'sdsae', name: 'Sword Sweep (slow knock)', speed: 'fast', cdKey: 'SDSAE', cd: 6, dmg: 12, interruptible: true },
+      { combo: 'asdsdq', name: 'Attack Mode Dark Katana Teleport', speed: 'very fast', cdKey: 'ASDSDQ', cd: 10, dmg: 20, interruptible: true },
+      { combo: 'asdase', name: 'Defense Mode Greatsword Impale', speed: 'average', cdKey: 'ASDASE', cd: 11, dmg: 24, interruptible: false },
+      { combo: 'asdasdw', name: 'Speed Mode Sphere DOT + Launch', speed: 'average', cdKey: 'ASDASDW', cd: 15, dmg: 28, interruptible: false },
+      { combo: 'adadadq', name: 'Huge Katana Slash', speed: 'slow', cdKey: 'ADADADQ', cd: 18, dmg: 35, interruptible: false },
+      { combo: 'asddsae', name: 'Flaming Long Projectile (DoT)', speed: 'slow', cdKey: 'ASDDSAE', cd: 15, dmg: 5, interruptible: false },
+    ];
+
+    /* ===== MOVELIST UI ===== */
+    function buildMovelistUI() {
+      movelistContent.innerHTML = '';
+      moves.forEach(m => {
+        const row = document.createElement('div');
+        row.className = 'moveRow';
+        row.innerHTML =
+          `<span class="moveName">${m.name}</span> ` +
+          `<span class="moveCombo">[${m.combo.toUpperCase()}]</span> ` +
+          `<span class="moveCd">CD: ${m.cd}s</span>`;
+        movelistContent.appendChild(row);
+      });
+    }
+    buildMovelistUI();
+
+    /* ===== RUNE SYSTEM ===== */
+    function setRune(mode) {
+      player.rune = mode;
+      runeDisplay.className = mode;
+      runeDisplay.textContent =
+        mode === 'attack' ? 'Attack' :
+        mode === 'defense' ? 'Defense' :
+        mode === 'speed' ? 'Speed' : 'None';
+    }
+
+    function cycleRuneForward() {
+      if (player.rune === 'none') setRune('attack');
+      else if (player.rune === 'attack') setRune('defense');
+      else if (player.rune === 'defense') setRune('speed');
+      else setRune('none');
+    }
+
+    function cycleRuneBackward() {
+      if (player.rune === 'none') setRune('speed');
+      else if (player.rune === 'speed') setRune('defense');
+      else if (player.rune === 'defense') setRune('attack');
+      else setRune('none');
+    }
+
+    function runeDamageMultiplier() {
+      if (player.rune === 'attack') return 1.4;
+      if (player.rune === 'defense') return 1.0;
+      if (player.rune === 'speed') return 0.8;
+      return 1.0;
+    }
+
+    /* ===== ATTACK STORE ===== */
+    function clearAttackStore() {
+      player.attackStoreMode = false;
+      player.attackStoreMoves = [];
+      attackStoreDisplay.textContent = 'Inactive';
+    }
+
+    function activateAttackStore() {
+      player.attackStoreMode = true;
+      player.attackStoreMoves = [];
+      attackStoreDisplay.textContent = 'Recording';
+    }
+
+    function finalizeAttackStore() {
+      if (player.attackStoreMoves.length > 0) {
+        attackStoreDisplay.textContent = 'Stored (' + player.attackStoreMoves.length + ')';
+      } else {
+        clearAttackStore();
+      }
+    }
+
+    function triggerAttackStoreChain() {
+      if (player.attackStoreMoves.length === 0) return;
+      const chain = [...player.attackStoreMoves];
+      clearAttackStore();
+      let delay = 0;
+      chain.forEach(m => {
+        setTimeout(() => {
+          performMove(m, true);
+        }, delay);
+        delay += 150;
+      });
+    }
+
+    /* ===== INPUT / KEYSTROKES ===== */
+    function addKeyToBar(key) {
+      keysTyped += key;
+      if (keysTyped.length > maxKeysShown) {
+        keysTyped = keysTyped.slice(keysTyped.length - maxKeysShown);
+      }
+      keystrokeBar.textContent = keysTyped.toUpperCase();
+    }
+
+    function clearKeys() {
+      keysTyped = '';
+      keystrokeBar.textContent = '';
+    }
+
+    function checkCombos() {
+      const lower = keysTyped.toLowerCase();
+      for (const move of moves) {
+        if (lower.endsWith(move.combo)) {
+          tryTriggerMove(move);
+          break;
+        }
+      }
+    }
+
+    function tryTriggerMove(move) {
+      if (move.cdKey && isOnCooldown(move.cdKey)) return;
+      performMove(move, false);
+      setCooldown(move.cdKey, move.cd);
+      if (player.interruptible && player.attackStoreMode) {
+        player.attackStoreMoves.push(move);
+      }
+    }
+
+    /* ===== MOVE EXECUTION ===== */
+    function performMove(move, fromStore) {
+      // basic animation state
+      player.state = move.name;
+      player.animTime = 0;
+
+      // interruptible flag
+      player.interruptible = !!move.interruptible;
+      interruptDisplay.textContent = player.interruptible ? 'Yes' : 'No';
+      interruptDisplay.className = player.interruptible ? 'active' : '';
+
+      // rune changes for specific moves
+      if (move.combo === 'asdsdq' || move.combo === 'wadq' || move.combo === 'swsq') {
+        setRune('attack');
+      }
+      if (move.combo === 'asdase' || move.combo === 'adwq') {
+        setRune('defense');
+      }
+      if (move.combo === 'asde' || move.combo === 'asdasdw') {
+        setRune('speed');
+      }
+
+      // simple positional effects
+      const dx = dummy.x - player.x;
+      const facingCorrect =
+        (player.facing === 1 && dx > 0) ||
+        (player.facing === -1 && dx < 0);
+      const baseDamage = move.dmg;
+      const dmg = Math.round(baseDamage * runeDamageMultiplier());
+
+      // spawn simple visual effects
+      spawnEffect(move);
+
+      // apply damage if in "range" (simple check)
+      if (baseDamage > 0 && facingCorrect && Math.abs(dx) < 160) {
+        dummy.hitTimer = 0.25;
+        addDamage(dmg);
+      }
+
+      // movement / special behavior (simplified)
+      if (move.combo === 'ww') {
+        player.x += player.facing * 80;
+      } else if (move.combo === 'ss') {
+        player.x -= player.facing * 80;
+      } else if (move.combo === 'sdq') {
+        player.x += player.facing * 60;
+      } else if (move.combo === 'sax') {
+        player.x += player.facing * 50;
+      } else if (move.combo === 'swsq') {
+        player.x += player.facing * 90;
+      } else if (move.combo === 'asde') {
+        // teleport near dummy
+        player.x = dummy.x - 60 * player.facing;
+      } else if (move.combo === 'asdasdw') {
+        player.x += player.facing * 70;
+      } else if (move.combo === 'wadq') {
+        player.x += player.facing * 40;
+      }
+
+      // attack store trigger: if from rune change during interruptible
+      if (player.interruptible && (move.combo === 'f' || move.combo === 'g')) {
+        // first rune change: start recording
+        if (!player.attackStoreMode) {
+          activateAttackStore();
+          // cooldown reduced
+          setCooldown(move.cdKey, 0.1);
+        } else {
+          // second rune change: finalize
+          finalizeAttackStore();
+        }
+      }
+
+      // if any attack used and we have stored chain, trigger it
+      if (!fromStore && baseDamage > 0 && player.attackStoreMoves.length > 0) {
+        triggerAttackStoreChain();
+      }
+    }
+
+    /* ===== EFFECTS / PROJECTILES (SIMPLE VISUALS) ===== */
+    function spawnEffect(move) {
+      const px = player.x;
+      const py = player.y;
+      const dir = player.facing;
+
+      if (move.combo === 'sc') {
+        projectiles.push({ x: px, y: py - 40, vx: 0, vy: 4, life: 1.0, type: 'down' });
+      } else if (move.combo === 'dase') {
+        projectiles.push({ x: px, y: py - 30, vx: dir * 4, vy: 0, life: 1.5, type: 'magnet' });
+      } else if (move.combo === 'asddsae') {
+        projectiles.push({ x: px, y: py - 30, vx: dir * 5, vy: 0, life: 2.0, type: 'flame' });
+      } else if (move.combo === 'swq') {
+        effects.push({ x: px + dir * 40, y: py - 40, r: 10, life: 1.0, type: 'blackhole' });
+      } else if (move.combo === 'adadadq') {
+        effects.push({ x: px + dir * 60, y: py - 40, r: 40, life: 0.8, type: 'slash' });
+      } else {
+        effects.push({ x: px, y: py - 40, r: 15, life: 0.3, type: 'hit' });
+      }
+    }
+
+    /* ===== RESET ===== */
+    function resetGame() {
+      player.x = 250;
+      player.y = 280;
+      player.facing = 1;
+      player.state = 'idle';
+      player.animTime = 0;
+      player.interruptible = false;
+      interruptDisplay.textContent = 'No';
+      interruptDisplay.className = '';
+      setRune('none');
+      clearAttackStore();
+      clearKeys();
+      resetCombo();
+      projectiles.length = 0;
+      effects.length = 0;
+      for (const k in cooldowns) delete cooldowns[k];
+    }
+
+    /* ===== DRAWING: SEGMENTED STICK FIGURE ===== */
+    function drawStickFigure(x, y, facing, state, animTime) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(facing, 1);
+
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#ffffff';
+
+      // base offsets
+      let bodyLean = 0;
+      let armAngle = 0;
+      let legAngle = 0;
+
+      if (state.includes('Kick') || state.includes('Uppercut') || state.includes('Slash')) {
+        armAngle = Math.sin(animTime * 12) * 0.6 + 0.6;
+        legAngle = Math.sin(animTime * 10) * 0.4 + 0.4;
+        bodyLean = 4;
+      } else if (state.includes('Dash') || state.includes('Lunge') || state.includes('Teleport')) {
+        bodyLean = 8;
+        legAngle = 0.6;
+      }
+
+      // segmented limbs
+      const headY = -50;
+      const torsoTopY = -40;
+      const torsoBottomY = 0;
+      const armY = -35;
+      const legY = 0;
+
+      // head
+      ctx.beginPath();
+      ctx.arc(0, headY, 10, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // torso
+      ctx.beginPath();
+      ctx.moveTo(bodyLean, torsoTopY);
+      ctx.lineTo(bodyLean, torsoBottomY);
+      ctx.stroke();
+
+      // arms
+      const armLen = 22;
+      ctx.beginPath();
+      // right arm
+      ctx.moveTo(bodyLean, armY);
+      ctx.lineTo(bodyLean + armLen * Math.cos(armAngle), armY + armLen * Math.sin(armAngle));
+      // left arm
+      ctx.moveTo(bodyLean, armY);
+      ctx.lineTo(bodyLean - armLen, armY + armLen * 0.3);
+      ctx.stroke();
+
+      // legs
+      const legLen = 26;
+      ctx.beginPath();
+      // right leg
+      ctx.moveTo(bodyLean, legY);
+      ctx.lineTo(bodyLean + legLen * Math.cos(legAngle), legY + legLen * Math.sin(legAngle));
+      // left leg
+      ctx.moveTo(bodyLean, legY);
+      ctx.lineTo(bodyLean - legLen, legY + legLen * 0.8);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawDummy(x, y, hitTimer) {
+      ctx.save();
+      ctx.translate(x, y);
+      const shake = hitTimer > 0 ? Math.sin(hitTimer * 40) * 4 : 0;
+      ctx.translate(shake, 0);
+
+      ctx.fillStyle = hitTimer > 0 ? '#ff6666' : '#bbbbbb';
+      ctx.fillRect(-15, -60, 30, 60);
+      ctx.beginPath();
+      ctx.arc(0, -75, 10, 0, Math.PI * 2);
+      ctx.fillStyle = '#dddddd';
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawProjectiles() {
+      projectiles.forEach(p => {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        if (p.type === 'down') ctx.fillStyle = '#66ccff';
+        else if (p.type === 'magnet') ctx.fillStyle = '#ffcc66';
+        else if (p.type === 'flame') ctx.fillStyle = '#ff6633';
+        else ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+    }
+
+    function drawEffects() {
+      effects.forEach(e => {
+        ctx.save();
+        ctx.translate(e.x, e.y);
+        if (e.type === 'blackhole') {
+          ctx.strokeStyle = '#6633ff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (e.type === 'slash') {
+          ctx.strokeStyle = '#ff9966';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(-e.r, 0);
+          ctx.lineTo(e.r, 0);
+          ctx.stroke();
+        } else if (e.type === 'hit') {
+          ctx.strokeStyle = '#ffff66';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, e.r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      });
+    }
+
+    /* ===== UPDATE ===== */
+    function update(dt) {
+      // animation
+      if (player.state !== 'idle') {
+        player.animTime += dt;
+        if (player.animTime > 0.4) {
+          player.state = 'idle';
+          player.animTime = 0;
+          player.interruptible = false;
+          interruptDisplay.textContent = 'No';
+          interruptDisplay.className = '';
+        }
+      }
+
+      if (dummy.hitTimer > 0) {
+        dummy.hitTimer -= dt;
+        if (dummy.hitTimer < 0) dummy.hitTimer = 0;
+      }
+
+      // projectiles
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const p = projectiles[i];
+        p.x += p.vx * (dt * FPS / 60);
+        p.y += p.vy * (dt * FPS / 60);
+        p.life -= dt;
+        if (p.life <= 0) projectiles.splice(i, 1);
+      }
+
+      // effects
+      for (let i = effects.length - 1; i >= 0; i--) {
+        const e = effects[i];
+        e.life -= dt;
+        if (e.life <= 0) effects.splice(i, 1);
+      }
+
+      // combo meter auto-hide
+      if (combo.lastDamageTime > 0) {
+        const elapsed = performance.now() - combo.lastDamageTime;
+        if (elapsed > 2800) {
+          resetCombo();
+        }
+      }
+
+      // clamp player position
+      player.x = Math.max(50, Math.min(canvas.width - 50, player.x));
+    }
+
+    /* ===== RENDER ===== */
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // ground
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 310);
+      ctx.lineTo(canvas.width, 310);
+      ctx.stroke();
+
+      // player & dummy
+      drawStickFigure(player.x, player.y, player.facing, player.state, player.animTime);
+      drawDummy(dummy.x, dummy.y, dummy.hitTimer);
+
+      // facing arrow
+      ctx.fillStyle = '#8fd';
+      ctx.font = '16px Arial';
+      const arrow = player.facing === 1 ? '➜' : '⬅';
+      ctx.fillText('Facing ' + (player.facing === 1 ? 'RIGHT ' : 'LEFT ') + arrow, 20, 30);
+
+      // projectiles & effects
+      drawProjectiles();
+      drawEffects();
+    }
+
+    /* ===== GAME LOOP (60 FPS) ===== */
+    let lastTime = performance.now();
+    function gameLoop() {
+      const now = performance.now();
+      const dt = (now - lastTime) / 1000;
+      lastTime = now;
+
+      update(dt);
+      render();
+
+      requestAnimationFrame(gameLoop);
+    }
+    requestAnimationFrame(gameLoop);
+
+    /* ===== INPUT HANDLING ===== */
+    window.addEventListener('keydown', (e) => {
+      const key = e.key.toLowerCase();
+
+      // reset
+      if (key === 'm') {
+        resetGame();
+        return;
+      }
+
+      // movement IJKL
+      if (key === 'j') {
+        player.x -= 10;
+        player.facing = -1;
+        facingText.textContent = 'LEFT ⬅';
+        return;
+      }
+      if (key === 'l') {
+        player.x += 10;
+        player.facing = 1;
+        facingText.textContent = 'RIGHT ➜';
+        return;
+      }
+      if (key === 'i') {
+        player.y -= 5;
+        return;
+      }
+      if (key === 'k') {
+        player.y += 5;
+        return;
+      }
+
+      // rune change direct keys (also combos F/G)
+      if (key === 'f') {
+        cycleRuneForward();
+      }
+      if (key === 'g') {
+        cycleRuneBackward();
+      }
+
+      // taunt (cancel)
+      if (key === 't') {
+        // cancelling: allow new move during certain states
+        player.state = 'idle';
+        player.animTime = 0;
+        player.interruptible = true;
+        interruptDisplay.textContent = 'Yes (Cancel)';
+        interruptDisplay.className = 'active';
+      }
+
+      // record keystrokes for combos
+      if (key.length === 1 && key.match(/[a-z]/)) {
+        addKeyToBar(key);
+        checkCombos();
+      }
+    });
+
+    // initial state
+    setRune('none');
+    resetGame();
+  </script>
+</body>
+</html>
